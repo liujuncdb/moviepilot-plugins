@@ -44,7 +44,7 @@ class FFmpegStrmThumbMid(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/imaliang/MoviePilot-Plugins/main/icons/ffmpegstrm.png"
     # 插件版本
-    plugin_version = "2.1.0"
+    plugin_version = "2.1.1"
     # 插件作者
     plugin_author = "imaliang (魔改: local)"
     # 作者主页
@@ -69,6 +69,8 @@ class FFmpegStrmThumbMid(_PluginBase):
     _auto_mid = True
     # 中间帧偏移量（秒），正数向后偏移，负数向前偏移
     _mid_offset = 0
+    # 截取位置占全片时长的比例（0.5 = 正中间，可调 0.05~0.95）
+    _mid_ratio = 0.5
     _gen_strategy = "100=60"
     _gen_strategy_count = 0
     _gen_strategy_max_count = 100
@@ -95,6 +97,14 @@ class FFmpegStrmThumbMid(_PluginBase):
             self._auto_resume = config.get("auto_resume") if config.get("auto_resume") is not None else True
             self._auto_mid = config.get("auto_mid") if config.get("auto_mid") is not None else True
             self._mid_offset = self._to_seconds(config.get("mid_offset")) or 0
+            _ratio_raw = config.get("mid_ratio")
+            if _ratio_raw in (None, ""):
+                self._mid_ratio = 0.5
+            else:
+                try:
+                    self._mid_ratio = max(0.05, min(0.95, float(_ratio_raw) / 100.0))
+                except (TypeError, ValueError):
+                    self._mid_ratio = 0.5
             self._gen_strategy = config.get("gen_strategy") or "100=60"
             # 生成策略容错解析：格式非法时回退默认值，避免整个插件加载失败
             try:
@@ -151,6 +161,7 @@ class FFmpegStrmThumbMid(_PluginBase):
                     "overlay": self._overlay,
                     "auto_mid": self._auto_mid,
                     "mid_offset": self._mid_offset,
+                    "mid_ratio": int(round(self._mid_ratio * 100)),
                     "gen_strategy": self._gen_strategy,
                     "auto_resume": self._auto_resume,
                 })
@@ -281,6 +292,14 @@ class FFmpegStrmThumbMid(_PluginBase):
                                     'md': 4
                                 },
                                 'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'mid_ratio',
+                                            'label': '截取位置(%)',
+                                            'placeholder': '50'
+                                        }
+                                    },
                                     {
                                         'component': 'VTextField',
                                         'props': {
@@ -490,6 +509,7 @@ class FFmpegStrmThumbMid(_PluginBase):
             "overlay": False,
             "auto_mid": True,
             "mid_offset": 0,
+            "mid_ratio": 50,
             "gen_strategy": "100=60",
             "auto_resume": True,
         }
@@ -742,14 +762,14 @@ class FFmpegStrmThumbMid(_PluginBase):
 
         if duration is not None and duration > 0:
             if self._auto_mid:
-                target = duration / 2 + (self._mid_offset or 0)
-                mode = "中间帧"
+                target = duration * self._mid_ratio + (self._mid_offset or 0)
+                mode = f"中间帧({int(round(self._mid_ratio * 100))}%)"
             else:
                 target = fixed
                 mode = "固定时间"
                 # 短视频保护：固定时间超过片长时回退到中间帧
                 if target >= duration:
-                    target = duration / 2 + (self._mid_offset or 0)
+                    target = duration * self._mid_ratio + (self._mid_offset or 0)
                     mode = "固定时间超片长，回退中间帧"
             # 钳制在有效区间内，避免 -ss 越界
             lower = 0.3
