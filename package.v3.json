@@ -1,15 +1,16 @@
 {
   "FFmpegStrmThumbMid": {
     "name": "FFmpegStrm缩略图·中间帧魔改",
-    "description": "魔改版 STRM 缩略图插件：先用 ffprobe 探测片长，再截取影片正中间一帧生成 -thumb.jpg，短视频不会再因为固定截取时间超出时长而失败。支持仅补缺失、断点续跑、重启后自动续跑、扫描互斥与进度日志。",
+    "description": "基于 imaliang 的 FFmpegStrmThumb 改造：探测片长后按比例截取（默认正中间），短视频不再因固定时间点越界而失败；支持断点续跑、扫描互斥与进度日志。",
     "labels": "媒体库,缩略图,STRM,FFmpeg",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "icon": "ffmpegstrmthumbmid.svg",
     "author": "liujuncdb",
     "level": 1,
     "release": true,
     "system_version": ">=3.0.0",
     "history": {
+      "2.1.2": "在插件内与 README 中补充原作者 imaliang 鸣谢，并列出与原版 FFmpegStrmThumb 的 11 项改进对比；插件图标改为本仓库托管。",
       "2.1.1": "新增「截取位置(%)」配置：可把截取点从正中间调整到任意比例（默认 50%，范围 5%~95%），仍保留中间帧偏移秒数与短视频越界保护。",
       "2.1.0": "首个仓库发布版：中间帧截取 + 仅补缺失 + 重启后自动续跑 + 扫描互斥锁 + 精简失败日志；版本号改为 PEP440 规范格式以支持在线更新比对。"
     }

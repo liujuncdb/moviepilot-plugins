@@ -37,18 +37,48 @@ SCAN_LOCK_FILE = "/config/ffmpegstrmthumbmid.scan.lock"
 
 
 class FFmpegStrmThumbMid(_PluginBase):
+    """
+    FFmpegStrm 缩略图（中间帧魔改版）
+
+    本插件基于 imaliang 的 MoviePilot 插件 FFmpegStrmThumb 二次开发：
+        原版仓库：https://github.com/imaliang/moviepilot-plugins
+    在此向原作者 imaliang 致谢——原版解决了"为 STRM 媒体库批量生成 -thumb.jpg"
+    这一核心需求，本版只是在其基础上改造了截取策略与工程健壮性。
+
+    与原版的主要差异：
+        1. 截取时间：原版固定 -ss 时间点（默认 00:03:01），片长短于该点直接报错；
+           本版先用 ffprobe 探测片长，再按比例截取（默认 50% 即正中间），
+           时间点统一钳制在 [0.3s, 片长-0.1s]，短视频也能出图。
+        2. 截取位置：原版只能改固定时间字符串；本版提供"截取位置(%)"
+           （5%~95%）与"中间帧偏移(秒)"两个可调项。
+        3. 中断恢复：原版重启后从头重扫；本版逐个文件独立判断，
+           天然断点续跑，且插件加载后 15 秒自动补缺（可关）。
+        4. 扫描互斥：本版用内核 flock 加锁，重载后新旧扫描不会并发；
+           原版无互斥。
+        5. 重载行为：本版检测到扫描进行中时不打断，只取消定时任务；
+           原版会被插件重载打断。
+        6. 失败处理：本版区分 ok/skip/fail，对 moov 缺失、数据无效的文件
+           直接跳过，不再白等超时；原版统一走 error 日志。
+        7. 超时控制：本版为 ffprobe(8s) 与 ffmpeg(18s) 设定超时；
+           原版无超时，遇到坏链会长时间挂住。
+        8. 日志：本版每 50 个文件输出进度、耗时与预计剩余，结束给汇总；
+           原版逐条 info/error，无进度与汇总。
+        9. 生成策略：两版都支持"N 个后暂停 M 秒"，本版对非法格式做了容错，
+           不会因配置写错导致插件加载失败。
+    """
+
     # 插件名称
     plugin_name = "FFmpegStrm缩略图·中间帧魔改"
     # 插件描述
-    plugin_desc = "魔改版：自动探测影片片长并截取正中间一帧作为缩略图，短视频不再因固定时间点超出时长而失败。"
+    plugin_desc = "基于 imaliang 的 FFmpegStrmThumb 改造：探测片长后按比例截取（默认正中间），短视频不再因固定时间点越界而失败；支持续跑、互斥与进度日志。"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/imaliang/MoviePilot-Plugins/main/icons/ffmpegstrm.png"
+    plugin_icon = "https://raw.githubusercontent.com/liujuncdb/moviepilot-plugins/main/icons/ffmpegstrmthumbmid.svg"
     # 插件版本
-    plugin_version = "2.1.1"
+    plugin_version = "2.1.2"
     # 插件作者
-    plugin_author = "imaliang (魔改: local)"
+    plugin_author = "liujuncdb（原版: imaliang）"
     # 作者主页
-    author_url = "https://github.com/imaliang"
+    author_url = "https://github.com/liujuncdb"
     # 插件配置项ID前缀
     plugin_config_prefix = "ffmpegstrmthumbmid_"
     # 加载顺序
