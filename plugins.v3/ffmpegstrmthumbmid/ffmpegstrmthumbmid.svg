@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect x="0" y="0" width="128" height="128" rx="20" fill="#1f2a37"/>
+  <rect x="14" y="34" width="72" height="60" rx="8" fill="#3b4c60"/>
+  <rect x="20" y="42" width="10" height="8" rx="2" fill="#8fa6bd"/>
+  <rect x="20" y="56" width="10" height="8" rx="2" fill="#8fa6bd"/>
+  <rect x="20" y="70" width="10" height="8" rx="2" fill="#8fa6bd"/>
+  <rect x="20" y="84" width="10" height="8" rx="2" fill="#8fa6bd"/>
+  <rect x="70" y="42" width="10" height="8" rx="2" fill="#8fa6bd"/>
+  <rect x="70" y="56" width="10" height="8" rx="2" fill="#8fa6bd"/>
+  <rect x="70" y="70" width="10" height="8" rx="2" fill="#8fa6bd"/>
+  <rect x="70" y="84" width="10" height="8" rx="2" fill="#8fa6bd"/>
+  <circle cx="50" cy="64" r="15" fill="#7bd88f"/>
+  <line x1="50" y1="64" x2="50" y2="53" stroke="#1f2a37" stroke-width="3" stroke-linecap="round"/>
+  <line x1="50" y1="64" x2="60" y2="70" stroke="#1f2a37" stroke-width="3" stroke-linecap="round"/>
+  <rect x="88" y="46" width="24" height="36" rx="6" fill="#e8b04b"/>
+  <rect x="94" y="54" width="12" height="8" rx="2" fill="#1f2a37"/>
+</svg>
