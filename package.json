@@ -14,5 +14,21 @@
       "2.1.1": "新增「截取位置(%)」配置：可把截取点从正中间调整到任意比例（默认 50%，范围 5%~95%），仍保留中间帧偏移秒数与短视频越界保护。",
       "2.1.0": "首个仓库发布版：中间帧截取 + 仅补缺失 + 重启后自动续跑 + 扫描互斥锁 + 精简失败日志；版本号改为 PEP440 规范格式以支持在线更新比对。"
     }
+  },
+  "FolderCover": {
+    "name": "文件夹封面生成",
+    "description": "扫描指定目录及子目录，为每个文件夹生成 Emby 可识别的 folder.jpg（竖版 2:3）与 backdrop.jpg（横版 16:9）；支持 14 套版式、详情页实时预览、一键全量与视频截帧兜底。",
+    "labels": "媒体库,封面,图片",
+    "version": "0.1",
+    "icon": "foldercover.png",
+    "author": "liujuncdb",
+    "level": 1,
+    "system_version": ">=2.0.0,<4",
+    "project_url": "https://github.com/liujuncdb/moviepilot-plugins",
+    "plugin_readme": "https://raw.githubusercontent.com/liujuncdb/moviepilot-plugins/main/plugins/foldercover/README.md",
+    "history": {
+      "v0.1": "首个公开版本（公开版本号由内部迭代版重置为 0.1）：目录树扫描与递归生成、四槽位版式（竖版/横版 × 单图/多图）共 14 套、详情页实时预览与编辑、一键全量与视频截帧兜底、成品防套娃与素材去重。"
+    },
+    "v2": true
   }
 }

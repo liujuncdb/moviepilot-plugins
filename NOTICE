@@ -1,0 +1,17 @@
+FolderCover（文件夹封面生成）
+Copyright (C) 2026 liujuncdb
+
+本插件起源于 imaliang/MoviePilot-Plugins 中的 FFmpegStrm缩略图 插件，
+在其目录扫描、视频截帧与 MoviePilot 插件框架的基础上重构并扩展为独立的
+文件夹封面生成插件。上游项目采用 GNU General Public License v3.0：
+
+    https://github.com/imaliang/MoviePilot-Plugins
+
+本仓库同样以 GPL-3.0 发布。原始作品中由上游作者享有著作权的部分，
+其权利仍归原作者所有；本插件新增与重构部分由 liujuncdb 享有著作权。
+
+主要新增与重构内容：
+- 竖版 2:3 与横版 16:9 双画幅封面输出
+- 14 套确定性排版（竖版/横版 × 单图/多图，含斜拼）
+- 详情页内嵌实时预览、目录树多选与四槽位版式选择
+- 成品防套娃、图片去重、素材排序与生成清单
