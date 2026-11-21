@@ -73,6 +73,13 @@ input:focus,textarea:focus{border-color:#3f5c8f}
 .seg button.on{background:#26324a;color:#fff}
 .content{overflow:auto;padding:14px 16px 32px;flex:1}
 .status{color:var(--dim);font-size:12px}
+.prog{display:none;align-items:center;gap:8px;min-width:190px;max-width:260px}
+.prog.show{display:inline-flex}
+.prog-track{position:relative;flex:1;height:7px;background:#0e131c;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.prog-fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,#3f6fe8,#7aa2ff);transition:width .3s ease}
+.prog.indet .prog-fill{width:34%!important;animation:progRun 1.15s ease-in-out infinite}
+@keyframes progRun{0%{transform:translateX(-120%)}100%{transform:translateX(330%)}}
+.prog .pct{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;min-width:32px;text-align:right}
 .group{margin-bottom:18px}
 .group h3{margin:0 0 4px;font-size:12px;letter-spacing:1.4px;color:#9fb0cc;font-weight:600;text-transform:uppercase}
 .group .hint{color:var(--dim);font-size:11px;margin-bottom:8px}
@@ -122,6 +129,7 @@ ul.report li{margin:3px 0}
   h1{font-size:14px}
   .sub{display:none}
   header #stat{font-size:11px;margin-left:auto}
+  #prog{flex:1 1 100%;min-width:0;max-width:none;order:3}
   header button{padding:6px 10px;font-size:12px}
   main{display:flex;flex-direction:column}
   aside{position:fixed;top:0;bottom:0;left:0;width:86vw;max-width:360px;z-index:31;padding-top:env(safe-area-inset-top);
@@ -169,6 +177,10 @@ ul.report li{margin:3px 0}
   <span class="sub">预览 · 选择 · 写入 Emby 文件夹封面</span>
   <span class="grow"></span>
   <span id="stat" class="status">就绪</span>
+  <div id="prog" class="prog" role="progressbar" aria-label="全量制作进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <div class="prog-track"><div id="progFill" class="prog-fill"></div></div>
+    <span id="progPct" class="pct">0%</span>
+  </div>
   <button id="btnRefresh" class="ghost">刷新目录</button>
   <button id="btnAll" class="primary">一键全量制作</button>
 </header>
@@ -507,12 +519,46 @@ async function batchApply(){
 }
 
 /* ---------------- 全量 + 状态 ---------------- */
+function shortPath(p){
+  const s=String(p||'').replace(/\\/g,'/').replace(/\/+$/,'');
+  if(!s) return '';
+  const parts=s.split('/'); return parts[parts.length-1]||s;
+}
+function renderProgress(s){
+  const wrap=$('prog'); if(!wrap) return;
+  const running=!!s.running, planned=Number(s.planned||0), total=Number(s.total||0);
+  const show=running || planned>0 || total>0;
+  wrap.classList.toggle('show', show);
+  if(!show) return;
+  const pct=planned>0 ? Math.max(0,Math.min(100,Math.round(total*100/planned))) : 0;
+  wrap.classList.toggle('indet', running && planned===0);
+  $('progFill').style.width=(planned>0 ? pct+'%' : (running ? '34%' : (total>0 ? '100%' : '0%')));
+  $('progPct').textContent=planned>0 ? (pct+'%') : (running ? '…' : '—');
+  wrap.setAttribute('aria-valuenow', String(planned>0 ? pct : 0));
+}
+function statusLine(s){
+  const planned=Number(s.planned||0), total=Number(s.total||0);
+  const ok=Number(s.ok||0), skip=Number(s.skip||0), fail=Number(s.fail||0);
+  const cur=shortPath(s.current);
+  if(s.running){
+    let line='进行中：'+(planned>0 ? ('处理 '+total+'/'+planned) : '正在扫描目录…');
+    line+='，成功 '+ok+'，跳过 '+skip+'，失败 '+fail;
+    if(cur) line+=' · '+cur;
+    return line;
+  }
+  if(s.ts){
+    return '上次：处理 '+total+(planned>0?(' / '+planned):'')+'，成功 '+ok+'，跳过 '+skip+'，失败 '+fail+' · '+s.ts;
+  }
+  return '就绪';
+}
 async function runAll(){
   if(!confirm('对扫描目录内的全部文件夹执行一次封面生成？')) return;
   try{
     const data=await post('/api/v1/plugin/FolderCover/editor_run_all', {portrait_layout:O.chosen.portrait_single||null, portrait_multi_layout:O.chosen.portrait_multi||null, landscape_layout:O.chosen.landscape_single||null, landscape_multi_layout:O.chosen.landscape_multi||null});
-    if(!data.started){ toast(data.message||'已在运行中'); return; }
-    O.running=true; updateCounts(); $('stat').textContent='全量制作进行中…';
+    if(!data.started){ toast(data.message||'已在运行中'); O.running=true;
+      $('btnAll').disabled=true; renderProgress({running:true,total:0,planned:0}); pollStatus(); return; }
+    O.running=true; $('btnAll').disabled=true; updateCounts();
+    $('stat').textContent='全量制作进行中…'; renderProgress({running:true,total:0,planned:0});
     pollStatus();
   }catch(e){ toast('启动失败：'+e); }
 }
@@ -520,10 +566,13 @@ async function pollStatus(){
   clearTimeout(O.timer);
   try{
     const s=await api('/api/v1/plugin/FolderCover/editor_status');
-    $('stat').textContent = s.running ? ('进行中：处理 '+s.total+'，成功 '+s.ok+'，跳过 '+s.skip+'，失败 '+s.fail)
-      : (s.ts? ('上次：处理 '+s.total+'，成功 '+s.ok+'，跳过 '+s.skip+'，失败 '+s.fail+' · '+s.ts) : '就绪');
-    if(s.running){ O.timer=setTimeout(pollStatus, 1500); }
-    else if(O.running){ O.running=false; updateCounts(); loadTree(); toast('全量制作完成'); }
+    const wasRunning=O.running;
+    O.running=!!s.running;
+    $('stat').textContent=statusLine(s);
+    renderProgress(s);
+    if($('btnAll')) $('btnAll').disabled=!!s.running;
+    if(s.running){ O.timer=setTimeout(pollStatus, 1200); }
+    else if(wasRunning){ updateCounts(); loadTree(); toast('全量制作完成'); }
   }catch(e){ O.timer=setTimeout(pollStatus, 2500); }
 }
 
@@ -963,6 +1012,9 @@ def _run_all(plugin, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
         except Exception:  # noqa: BLE001
             pass
 
+    # 先把 running 同步置为 True，避免前端启动后立刻轮询时把上一轮结果当成“已结束”
+    plugin._last_stats = {"running": True, "total": 0, "planned": 0, "ok": 0, "skip": 0,
+                          "fail": 0, "current": "", "ts": stats.get("ts", "")}
     threading.Thread(target=_job, name="foldercover-scan", daemon=True).start()
     return {"started": True}
 
@@ -972,9 +1024,11 @@ def _status(plugin) -> Dict[str, Any]:
     return {
         "running": bool(stats.get("running")),
         "total": stats.get("total", 0),
+        "planned": stats.get("planned", 0),
         "ok": stats.get("ok", 0),
         "skip": stats.get("skip", 0),
         "fail": stats.get("fail", 0),
+        "current": stats.get("current", ""),
         "ts": stats.get("ts", ""),
     }
 

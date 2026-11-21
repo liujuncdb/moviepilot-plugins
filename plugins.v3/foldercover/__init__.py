@@ -445,8 +445,8 @@ class FolderCover(_PluginBase):
 
     def __libraryscan(self, _is_overlay: bool = False) -> None:
         started = datetime.now()
-        self._last_stats = {"running": True, "total": 0, "ok": 0, "skip": 0, "fail": 0,
-                            "ts": getattr(self, "_last_stats", {}).get("ts", "")}
+        self._last_stats = {"running": True, "total": 0, "planned": 0, "ok": 0, "skip": 0,
+                            "fail": 0, "current": "", "ts": getattr(self, "_last_stats", {}).get("ts", "")}
         try:
             self._scan_directories(started)
         finally:
@@ -458,8 +458,8 @@ class FolderCover(_PluginBase):
     def _scan_directories(self, started) -> None:
         if not self._scan_paths:
             logger.warning("文件夹封面：未配置扫描目录，跳过")
-            self._last_stats = {"running": False, "total": 0, "ok": 0, "skip": 0, "fail": 0,
-                                "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+            self._last_stats = {"running": False, "total": 0, "planned": 0, "ok": 0, "skip": 0,
+                                "fail": 0, "current": "", "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             return
         exclude_paths = [p.strip() for p in self._exclude_paths.split("\n") if p.strip()]
         roots = [p.strip() for p in self._scan_paths.split("\n") if p.strip()]
@@ -478,14 +478,20 @@ class FolderCover(_PluginBase):
             else:
                 directories.append(root_path)
 
-        logger.info(f"文件夹封面开始扫描：共 {len(directories)} 个目录")
+        directories = [d for d in directories if not self._is_excluded(d, exclude_paths)]
+        planned = len(directories)
+        run_ts = getattr(self, "_last_stats", {}).get("ts", "")
+        logger.info(f"文件夹封面开始扫描：共 {planned} 个目录")
         total = ok = skipped = failed = 0
+        # 每个目录处理前后都回写一次状态，详情页才能看到实时进度
+        self._last_stats = {"running": True, "total": total, "planned": planned, "ok": ok,
+                            "skip": skipped, "fail": failed, "current": "", "ts": run_ts}
         for directory in directories:
             if self._event.is_set():
                 logger.info("文件夹封面扫描服务停止")
                 return
-            if self._is_excluded(directory, exclude_paths):
-                continue
+            self._last_stats = {"running": True, "total": total, "planned": planned, "ok": ok,
+                                "skip": skipped, "fail": failed, "current": str(directory), "ts": run_ts}
             total += 1
             try:
                 state = self._process_dir(directory)
@@ -498,9 +504,12 @@ class FolderCover(_PluginBase):
             except Exception as err:
                 failed += 1
                 logger.error(f"文件夹封面处理目录 {directory} 时发生错误：{err}")
+            self._last_stats = {"running": True, "total": total, "planned": planned, "ok": ok,
+                                "skip": skipped, "fail": failed, "current": str(directory), "ts": run_ts}
         logger.info(f"文件夹封面扫描完成：处理 {total}，成功 {ok}，跳过 {skipped}，失败 {failed}")
-        self._last_stats = {"running": False, "total": total, "ok": ok, "skip": skipped,
-                            "fail": failed, "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+        self._last_stats = {"running": False, "total": total, "planned": planned, "ok": ok,
+                            "skip": skipped, "fail": failed, "current": "",
+                            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
     def _is_excluded(self, directory: Path, exclude_paths: List[str]) -> bool:
         for exclude in exclude_paths:
