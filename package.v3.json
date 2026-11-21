@@ -17,7 +17,7 @@
   },
   "FolderCover": {
     "name": "文件夹封面生成",
-    "description": "扫描指定目录及子目录，为每个文件夹生成 Emby 可识别的 folder.jpg（竖版 2:3）与 backdrop.jpg（横版 16:9）；支持 14 套版式、详情页实时预览、一键全量与视频截帧兜底。",
+    "description": "扫描指定目录及子目录，为每个文件夹生成 Emby 可识别的 folder.jpg（竖版 2:3）与 backdrop.jpg（横版 16:9）；支持 14 套版式、默认/随机低饱和配色、详情页实时预览、一键全量与视频截帧兜底。",
     "labels": "媒体库,封面,图片",
     "version": "0.1",
     "icon": "foldercover.png",
@@ -27,7 +27,7 @@
     "project_url": "https://github.com/liujuncdb/moviepilot-plugins",
     "plugin_readme": "https://raw.githubusercontent.com/liujuncdb/moviepilot-plugins/main/plugins.v3/foldercover/README.md",
     "history": {
-      "v0.1": "首个公开版本（公开版本号由内部迭代版重置为 0.1）：目录树扫描与递归生成、四槽位版式（竖版/横版 × 单图/多图）共 14 套、详情页实时预览与编辑、一键全量与视频截帧兜底、成品防套娃与素材去重。"
+      "v0.1": "首个公开版本（公开版本号由内部迭代版重置为 0.1）：目录树扫描与递归生成、四槽位版式（竖版/横版 × 单图/多图）共 14 套、详情页实时预览与编辑、默认/随机低饱和配色、制作选中/一键全量实时进度、一键全量与视频截帧兜底、成品防套娃与素材去重。"
     }
   }
 }

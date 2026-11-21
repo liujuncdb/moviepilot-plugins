@@ -4,6 +4,12 @@
 标题只有 40/32 一档，允许向下缩，不允许超过；微信息 13/12；
 不旋转、不投影、不加装饰渐变。版式原有的构图保留，只换掉违反规范的参数。
 """
+from contextlib import contextmanager
+from contextvars import ContextVar
+import colorsys
+import random
+import secrets
+
 from PIL import Image
 
 PAPER = (244, 241, 234)
@@ -19,9 +25,81 @@ DARK_HAIR = (58, 55, 51)
 DARK_DIM = (160, 153, 142)
 ACCENT_ON_DARK = (201, 122, 90)
 
+# 随机配色：同一色相派生纸面与深场两套 tone。
+# 色相取自低饱和的自然色系，饱和度和明度都限制在窄区间，避免花哨。
+_PALETTE = ContextVar("foldercover_palette", default=None)
+_PALETTE_ANCHORS = [
+    ("沙砾", 36, 0.125),
+    ("鼠尾草", 106, 0.115),
+    ("雾蓝", 204, 0.135),
+    ("灰紫", 292, 0.115),
+    ("陶土", 18, 0.165),
+    ("橄榄", 72, 0.120),
+    ("烟粉", 346, 0.115),
+    ("青灰", 186, 0.120),
+    ("燕麦", 44, 0.075),
+]
+
+
+def _hsl(hue: float, sat: float, light: float) -> tuple:
+    r, g, b = colorsys.hls_to_rgb((hue % 360) / 360.0, light, sat)
+    return (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
+
+
+def random_palette(seed=None) -> dict:
+    """返回一组低饱和、同色系的 light/dark tone；seed 相同则结果稳定。"""
+    seed = str(seed) if seed else secrets.token_hex(8)
+    rng = random.Random(seed)
+    _name, base_hue, base_sat = rng.choice(_PALETTE_ANCHORS)
+    hue = (base_hue + rng.uniform(-5.5, 5.5)) % 360
+    sat = max(0.095, min(0.245, base_sat + 0.055 + rng.uniform(-0.016, 0.016)))
+    lift = rng.uniform(-0.008, 0.008)
+    light = {
+        "field": _hsl(hue, sat, 0.908 + lift),
+        "field2": _hsl(hue, sat * 0.95, 0.925 + lift),
+        "paper": _hsl(hue, sat * 0.75, 0.954),
+        "paper2": _hsl(hue, sat * 0.62, 0.966),
+        "ink": _hsl(hue, 0.045, 0.105),
+        "dim": _hsl(hue, max(0.05, sat * 0.52), 0.505),
+        "rule": _hsl(hue, sat * 0.62, 0.845),
+        "accent": _hsl(hue, min(0.32, sat * 1.8), 0.455),
+        "plate": _hsl(hue, sat * 0.42, 0.972),
+    }
+    dark = {
+        "field": _hsl(hue, sat * 1.02, 0.108 + lift * 0.5),
+        "field2": _hsl(hue, sat * 1.12, 0.086 + lift * 0.5),
+        "paper": _hsl(hue, sat * 0.52, 0.912),
+        "paper2": _hsl(hue, sat * 0.45, 0.932),
+        "ink": _hsl(hue, 0.038, 0.935),
+        "dim": _hsl(hue, max(0.05, sat * 0.50), 0.620),
+        "rule": _hsl(hue, sat * 0.70, 0.222),
+        "accent": _hsl(hue, min(0.32, sat * 1.8), 0.625),
+        "plate": _hsl(hue, sat * 0.80, 0.146),
+    }
+    return {"id": seed, "name": _name, "light": light, "dark": dark}
+
+
+@contextmanager
+def palette_context(palette=None):
+    token = _PALETTE.set(palette if isinstance(palette, dict) else None)
+    try:
+        yield
+    finally:
+        _PALETTE.reset(token)
+
 
 def system_field(size, dark=False):
     """返回 (画布, tone)。不取画面色、不做渐变，只给一个系统底色。"""
+    palette = _PALETTE.get()
+    if isinstance(palette, dict):
+        base = palette.get("dark" if dark else "light") or {}
+        try:
+            colors = {k: tuple(int(c) for c in v[:3]) for k, v in base.items()}
+            if "field" in colors and "ink" in colors:
+                canvas = Image.new("RGBA", size, colors["field"] + (255,))
+                return canvas, colors
+        except Exception:
+            pass
     if dark:
         canvas = Image.new("RGBA", size, DARK + (255,))
         tone = {

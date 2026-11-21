@@ -16,8 +16,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import secrets
+
 from fastapi import Response
 from starlette.responses import HTMLResponse
+
+from .layouts._spec import random_palette
 
 PAGE_HTML = r"""<!doctype html>
 <html lang="zh-CN">
@@ -99,6 +103,10 @@ input:focus,textarea:focus{border-color:#3f5c8f}
 @keyframes sh{to{background-position-x:-200%}}
 .tools{border-top:1px solid var(--line);background:var(--panel2);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .field{display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1}
+.field.tone{flex:0 0 200px;min-width:180px}
+.tone-row{display:flex;align-items:center;gap:6px}
+.tone-row select{flex:1;min-width:0}
+.tone-row button{padding:7px 9px;font-size:12px;white-space:nowrap}
 .field label{font-size:11px;color:var(--dim)}
 .toolsbox{background:var(--panel2);border-top:1px solid var(--line)}
 .toolsbox summary{display:none}
@@ -155,6 +163,7 @@ ul.report li{margin:3px 0}
   .card .rec{top:6px;right:6px;font-size:9px;padding:0 6px}
   .tools{flex-direction:column;gap:8px;padding:8px 10px 12px}
   .field{min-width:0;width:100%}
+  .field.tone{flex-basis:auto}
   .tools button{width:100%;padding:9px}
   .adv .rows{grid-template-columns:1fr}
   .modal .box{width:94vw;padding:14px}
@@ -177,7 +186,7 @@ ul.report li{margin:3px 0}
   <span class="sub">预览 · 选择 · 写入 Emby 文件夹封面</span>
   <span class="grow"></span>
   <span id="stat" class="status">就绪</span>
-  <div id="prog" class="prog" role="progressbar" aria-label="全量制作进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+  <div id="prog" class="prog" role="progressbar" aria-label="封面制作进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
     <div class="prog-track"><div id="progFill" class="prog-fill"></div></div>
     <span id="progPct" class="pct">0%</span>
   </div>
@@ -224,6 +233,16 @@ ul.report li{margin:3px 0}
       <summary>文字与标签（默认取文件夹名）</summary>
       <div class="tools">
         <label class="check"><input id="tShow" type="checkbox" checked/> 显示标题</label>
+        <div class="field tone">
+          <label>配色</label>
+          <div class="tone-row">
+            <select id="cColor" title="默认保留版式原底色；随机生成低饱和同色系">
+              <option value="default">默认配色</option>
+              <option value="random">随机配色</option>
+            </select>
+            <button id="btnReroll" class="ghost" type="button" disabled title="换一组随机配色">换一组</button>
+          </div>
+        </div>
         <div class="field"><label>标题</label><input id="tTitle" type="text" placeholder="默认取文件夹名"/></div>
         <div class="field"><label>副标题</label><input id="tSub" type="text" placeholder="可留空"/></div>
         <div class="field"><label>小标签（年份/地区）</label><input id="tKicker" type="text" placeholder="如 2023 华语"/></div>
@@ -249,7 +268,7 @@ const QS = new URLSearchParams(location.search);
 const MOBILE = ()=>window.matchMedia('(max-width:760px)').matches;
 const O = {tree:null, q:'', open:new Set(), checked:new Set(), cur:null, orientation:(QS.get('orientation')==='landscape'?'landscape':'portrait'),
            meta:{}, text:{}, chosen:{portrait_single:null,portrait_multi:null,landscape_single:null,landscape_multi:null}, config:{portrait:{},landscape:{}},
-           schema:{}, autoMode:'', running:false, timer:null};
+           schema:{}, autoMode:'', running:false, batchRunning:false, timer:null, colorMode:'default', colorSeed:null, paletteName:''};
 
 const $ = (id)=>document.getElementById(id);
 function toast(msg, ms){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'), ms||2600);}
@@ -325,7 +344,7 @@ function updateCounts(){
   $('ckCount').textContent = '已选 '+O.checked.size;
   const n=O.checked.size;
   $('btnBatch').textContent = '制作选中 ('+n+')';
-  $('btnBatch').disabled = n===0 || O.running;
+  $('btnBatch').disabled = n===0 || O.running || O.batchRunning;
 }
 function flatVisible(){
   const out=[];
@@ -347,9 +366,13 @@ async function loadGallery(){
   content.innerHTML='<div class="status" style="padding:10px 0">正在排布风格…</div>';
   O.text = readText();
   try{
+    if(O.colorMode==='random' && !O.colorSeed) O.colorSeed=newSeed();
     const meta = await post('/api/v1/plugin/FolderCover/editor_choices',
-      {path:O.cur, orientation:O.orientation, text:O.text, configs:O.config});
+      {path:O.cur, orientation:O.orientation, text:O.text, configs:O.config,
+       color_mode:O.colorMode, color_seed:O.colorSeed});
     if(meta.error){ content.innerHTML='<div class="status" style="padding:24px 0">'+meta.error+'</div>'; return; }
+    if(meta.color_seed) O.colorSeed=meta.color_seed;
+    O.paletteName=meta.palette_name||'';
     O.meta[O.orientation]=meta;
     const sel=meta.selected||{};
     ['portrait_single','portrait_multi','landscape_single','landscape_multi'].forEach(k=>{ if(!O.chosen[k] && sel[k]) O.chosen[k]=sel[k]; });
@@ -360,7 +383,8 @@ async function loadGallery(){
     await Promise.all(meta.items.map(async (it)=>{
       try{
         const one = await post('/api/v1/plugin/FolderCover/editor_gallery',
-          {path:O.cur, orientation:O.orientation, layout:it.value, text:O.text||{}, configs:O.config});
+          {path:O.cur, orientation:O.orientation, layout:it.value, text:O.text||{}, configs:O.config,
+           color_mode:O.colorMode, color_seed:O.colorSeed});
         if(token!==O.token) return;
         done++; setStat('渲染中 '+done+'/'+meta.items.length);
         const card=$('card-'+it.value);
@@ -395,7 +419,8 @@ function renderSelHint(){
   $('selHint').textContent='一键全量将使用 → 竖版单图：'+pick('portrait_single')
     +' ｜ 竖版多图：'+pick('portrait_multi')
     +' ｜ 横版单图：'+pick('landscape_single')
-    +' ｜ 横版多图：'+pick('landscape_multi');
+    +' ｜ 横版多图：'+pick('landscape_multi')
+    +' ｜ 配色：'+(O.colorMode==='random'?('随机（预览 '+(O.paletteName||'…')+'，制作时每个目录独立随机）'):'默认');
 }
 
 function renderGallery(){
@@ -487,7 +512,8 @@ async function applyCurrent(){
   if(!O.cur) return;
   if(!O.chosen.portrait && !O.chosen.landscape){ toast('先点一张封面选中风格'); return; }
   $('stat').textContent='写入中…';
-  const payload={path:O.cur, text:readText(), portrait_config:O.config.portrait||{}, landscape_config:O.config.landscape||{}};
+  const payload={path:O.cur, text:readText(), portrait_config:O.config.portrait||{}, landscape_config:O.config.landscape||{},
+                 color_mode:O.colorMode};
   if(O.chosen.portrait_single) payload.portrait_layout=O.chosen.portrait_single;
   if(O.chosen.portrait_multi) payload.portrait_multi_layout=O.chosen.portrait_multi;
   if(O.chosen.landscape_single) payload.landscape_layout=O.chosen.landscape_single;
@@ -502,20 +528,44 @@ async function applyCurrent(){
 async function batchApply(){
   const paths=Array.from(O.checked);
   if(!paths.length) return;
+  if(O.batchRunning) return;
   if(!O.chosen.portrait && !O.chosen.landscape){ toast('先点一张封面选中风格'); return; }
-  $('stat').textContent='批量写入 '+paths.length+' 个目录…';
-  $('btnBatch').disabled=true;
+  const total=paths.length;
+  let done=0, ok=0, fail=0, current='';
+  const lines=[];
+  O.batchRunning=true;
+  $('btnBatch').disabled=true; if($('btnAll')) $('btnAll').disabled=true;
+  const paint=()=>{
+    let line='进行中：处理 '+done+'/'+total+'，成功 '+ok+'，失败 '+fail;
+    if(current) line+=' · '+shortPath(current);
+    $('stat').textContent=line;
+    renderProgress({running:true,total:done,planned:total});
+  };
+  paint();
   try{
-    const data=await post('/api/v1/plugin/FolderCover/editor_batch', {
-      paths, text:readText(), portrait_layout:O.chosen.portrait||null, landscape_layout:O.chosen.landscape||null,
-      portrait_config:O.config.portrait||{}, landscape_config:O.config.landscape||{}
-    });
-    const lines=(data.results||[]).map(r=>r.path+'  →  '+(r.ok?('成功 '+(r.written||[]).join(',') ):'失败 '+(r.error||'')));
-    openModal('批量制作完成', '成功 '+(data.ok||0)+' 个，失败 '+(data.fail||0)+' 个', lines);
-    $('stat').textContent='批量完成';
+    for(const path of paths){
+      current=path; paint();
+      try{
+        const data=await post('/api/v1/plugin/FolderCover/editor_apply', {
+          path, text:readText(), portrait_layout:O.chosen.portrait||null, landscape_layout:O.chosen.landscape||null,
+          portrait_config:O.config.portrait||{}, landscape_config:O.config.landscape||{},
+          color_mode:O.colorMode
+        });
+        if(data && data.error){ fail++; lines.push(path+'  →  失败 '+data.error); }
+        else { ok++; lines.push(path+'  →  成功 '+((data.written||[]).join(','))); }
+      }catch(e){ fail++; lines.push(path+'  →  失败 '+e); }
+      done++; paint();
+    }
+    renderProgress({running:false,total:done,planned:total});
+    $('stat').textContent='制作完成：成功 '+ok+'，失败 '+fail;
+    openModal('批量制作完成', '成功 '+ok+' 个，失败 '+fail+' 个', lines);
     loadTree();
   }catch(e){ toast('批量失败：'+e); }
-  finally{ updateCounts(); }
+  finally{
+    O.batchRunning=false; current='';
+    if($('btnAll')) $('btnAll').disabled=false;
+    updateCounts();
+  }
 }
 
 /* ---------------- 全量 + 状态 ---------------- */
@@ -554,7 +604,8 @@ function statusLine(s){
 async function runAll(){
   if(!confirm('对扫描目录内的全部文件夹执行一次封面生成？')) return;
   try{
-    const data=await post('/api/v1/plugin/FolderCover/editor_run_all', {portrait_layout:O.chosen.portrait_single||null, portrait_multi_layout:O.chosen.portrait_multi||null, landscape_layout:O.chosen.landscape_single||null, landscape_multi_layout:O.chosen.landscape_multi||null});
+    const data=await post('/api/v1/plugin/FolderCover/editor_run_all', {portrait_layout:O.chosen.portrait_single||null, portrait_multi_layout:O.chosen.portrait_multi||null, landscape_layout:O.chosen.landscape_single||null, landscape_multi_layout:O.chosen.landscape_multi||null,
+      color_mode:O.colorMode});
     if(!data.started){ toast(data.message||'已在运行中'); O.running=true;
       $('btnAll').disabled=true; renderProgress({running:true,total:0,planned:0}); pollStatus(); return; }
     O.running=true; $('btnAll').disabled=true; updateCounts();
@@ -603,6 +654,23 @@ $('btnRerender').onclick=()=>{ if(O.cur) loadGallery(); };
 ['tTitle','tSub','tKicker'].forEach(id=>{ $(id).oninput=scheduleAll; });
 $('tShow').onchange=()=>{ if(O.cur) loadGallery(); };
 
+function newSeed(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-5); }
+function syncColorUi(){
+  const sel=$('cColor'); if(sel) sel.value=O.colorMode;
+  const btn=$('btnReroll'); if(btn) btn.disabled=(O.colorMode!=='random');
+}
+$('cColor').onchange=(e)=>{
+  O.colorMode=(e.target.value==='random'?'random':'default');
+  O.colorSeed=null; O.paletteName='';
+  if(O.colorMode==='random') O.colorSeed=newSeed();
+  syncColorUi(); if(O.cur) loadGallery();
+};
+$('btnReroll').onclick=()=>{
+  if(O.colorMode!=='random') return;
+  O.colorSeed=newSeed(); O.paletteName='';
+  if(O.cur) loadGallery();
+};
+syncColorUi();
 loadTree();
 pollStatus();
 </script>
@@ -851,6 +919,25 @@ def _cache_put(key: str, value: str) -> None:
         _CACHE.popitem(last=False)
 
 
+def _color_mode(payload: Dict[str, Any]) -> str:
+    return "random" if str(payload.get("color_mode") or "").lower() == "random" else "default"
+
+
+def _color_seed(payload: Dict[str, Any]) -> str:
+    return str(payload.get("color_seed") or "").strip()
+
+
+def _color_cfg(cfg: Dict[str, Any], mode: str, seed: str, target: Path) -> None:
+    """把配色写进渲染参数；随机色按 seed + 目录派生，保证预览与成品一致。"""
+    cfg["color_mode"] = mode
+    if mode == "random":
+        cfg["color_seed"] = seed
+        cfg["_palette"] = random_palette(f"{seed}|{target}")
+    else:
+        cfg.pop("color_seed", None)
+        cfg.pop("_palette", None)
+
+
 def _choices_meta(plugin, payload: Dict[str, Any]) -> Dict[str, Any]:
     """先返回风格清单（不含图），前端据此先把卡片骨架摆出来。"""
     target = _safe_path(plugin, payload.get("path"))
@@ -877,9 +964,14 @@ def _choices_meta(plugin, payload: Dict[str, Any]) -> Dict[str, Any]:
         "landscape_single": getattr(plugin, "_landscape_layout", ""),
         "landscape_multi": getattr(plugin, "_landscape_multi_layout", ""),
     }
+    color_mode = _color_mode(payload)
+    color_seed = _color_seed(payload) or (secrets.token_hex(8) if color_mode == "random" else "")
+    palette = random_palette(f"{color_seed}|{target}") if color_mode == "random" else None
     return {"path": str(target), "orientation": orientation, "mode": mode,
             "auto_layout": plugin._pick_layout(orientation, assets),
-            "selected": selected, "items": items}
+            "selected": selected, "items": items,
+            "color_mode": color_mode, "color_seed": color_seed,
+            "palette_name": (palette or {}).get("name", "")}
 
 
 def _gallery_one(plugin, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -896,7 +988,10 @@ def _gallery_one(plugin, payload: Dict[str, Any]) -> Dict[str, Any]:
 
     text = payload.get("text") or {}
     configs = payload.get("configs") or {}
-    cfg = configs.get(orientation) or {}
+    cfg = dict(configs.get(orientation) or {})
+    mode = _color_mode(payload)
+    seed = _color_seed(payload) or (secrets.token_hex(8) if mode == "random" else "")
+    _color_cfg(cfg, mode, seed, target)
     key = _cache_key(target, orientation, layout, text, cfg)
     cached = _cache_get(key)
     if cached:
@@ -928,6 +1023,10 @@ def _apply_one(plugin, target: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
                         or (plugin._landscape_multi_layout if mode == "multi" else plugin._landscape_layout))
     portrait_config = dict(payload.get("portrait_config") or {})
     landscape_config = dict(payload.get("landscape_config") or {})
+    mode = _color_mode(payload)
+    seed = _color_seed(payload) or (secrets.token_hex(8) if mode == "random" else "")
+    _color_cfg(portrait_config, mode, seed, target)
+    _color_cfg(landscape_config, mode, seed, target)
     from . import BACKDROP_SIZE, FOLDER_SIZE
 
     written: List[str] = []
@@ -943,13 +1042,21 @@ def _apply_one(plugin, target: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
         frame.convert("RGB").save(target / name, format="JPEG", quality=90, subsampling=0, optimize=False)
         written.append(name)
 
+    # 派生色板只用于本次渲染，不写进清单；清单只保留 color_mode/color_seed，
+    # 后续按 seed + 目录重新派生，避免清单臃肿，也避免色板算法升级后被旧值锁死。
+    portrait_saved = {k: v for k, v in portrait_config.items() if k != "_palette"}
+    landscape_saved = {k: v for k, v in landscape_config.items() if k != "_palette"}
     style = {
         "portrait_layout": portrait_layout if want_portrait else (plugin._read_style(target).get("portrait_layout") or plugin._portrait_layout),
         "landscape_layout": landscape_layout if want_landscape else (plugin._read_style(target).get("landscape_layout") or plugin._landscape_layout),
         "portrait_multi_layout": payload.get("portrait_multi_layout") or "",
         "landscape_multi_layout": payload.get("landscape_multi_layout") or "",
-        "portrait_config": portrait_config,
-        "landscape_config": landscape_config,
+        # 随机配色的 seed 只在本次制作使用，不写进清单；
+        # 下一次制作/扫描会为每个目录重新随机，避免“一次定色、永久复用”。
+        "color_mode": mode,
+        "color_seed": "",
+        "portrait_config": portrait_saved,
+        "landscape_config": landscape_saved,
         "title": text.get("title") or "",
         "subtitle": text.get("subtitle") or "",
         "kicker": text.get("kicker") or "",
@@ -1005,6 +1112,9 @@ def _run_all(plugin, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
         val = payload.get(key + "_layout")
         if val:
             overrides[key] = val
+    mode = _color_mode(payload)
+    overrides["color_mode"] = mode
+    # 随机配色不在启动时定一个种子后统一复用；每个目录在 _process_dir 里独立取色。
 
     def _job():
         try:

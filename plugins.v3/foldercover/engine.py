@@ -24,6 +24,8 @@ from PIL import Image, ImageColor, ImageDraw, ImageEnhance, ImageFilter, ImageFo
 
 from app.sdk.logging import logger
 
+from .layouts._spec import palette_context, random_palette
+
 # 容器内置中文字体（文泉驿正黑），避免标题中文渲染成方块。
 DEFAULT_CJK_FONT = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
 
@@ -73,6 +75,18 @@ class FolderCoverEngine:
             sys.modules[base] = base_mod
         else:
             base_mod.__path__ = [str(self.layouts_dir)]
+
+        # 关键：动态包名会让布局里的 ``from .._spec import ...`` 再加载一份 _spec，
+        # 与引擎导入的 _spec 不是同一个模块，ContextVar 调色板上下文会失效。
+        # 这里把共享模块在动态包名下做单例别名，确保 system_field 读到同一个 _PALETTE。
+        for shared in ("_spec", "_type", "_imgutil", "_collage", "_gallery"):
+            real_name = f"{__package__}.layouts.{shared}"
+            alias_name = f"{base}.{shared}"
+            try:
+                real_mod = importlib.import_module(real_name)
+                sys.modules[alias_name] = real_mod
+            except Exception:
+                pass
 
         package = f"{base}.{orientation}"
         existing = sys.modules.get(package)
@@ -541,11 +555,15 @@ class FolderCoverEngine:
             params = len(inspect.signature(layout.render).parameters)
         except (TypeError, ValueError):
             params = 5
+        palette = config.get("_palette")
+        if not isinstance(palette, dict) and str(config.get("color_mode") or "default") == "random":
+            palette = random_palette(config.get("color_seed"))
         try:
-            if params >= 6:
-                frame = layout.render(self, bg, config, assets, fonts, None)
-            else:
-                frame = layout.render(self, bg, config, assets, fonts)
+            with palette_context(palette):
+                if params >= 6:
+                    frame = layout.render(self, bg, config, assets, fonts, None)
+                else:
+                    frame = layout.render(self, bg, config, assets, fonts)
         except Exception as error:
             logger.error(f"[FolderCover] 布局 {layout_name} 渲染失败: {error}")
             return None

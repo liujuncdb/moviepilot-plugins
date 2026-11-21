@@ -14,6 +14,7 @@ strm/视频中间帧补截一张，再按所选布局用 Pillow 合成。当前�
 import hashlib
 import os
 import json
+import secrets
 import subprocess
 import threading
 import time
@@ -32,6 +33,7 @@ from app.plugins import _PluginBase
 from app.schemas import Notification, NotificationType, MessageChannel
 
 from .engine import FolderCoverEngine, IMAGE_EXTS
+from .layouts._spec import random_palette
 
 # 探测 / 截帧超时（秒）
 PROBE_TIMEOUT = 15
@@ -120,6 +122,12 @@ class FolderCover(_PluginBase):
     ]
     LANDSCAPE_CHOICES = LANDSCAPE_SINGLE_CHOICES + LANDSCAPE_MULTI_CHOICES
 
+    # 配色：默认保留版式原始底色；随机为低饱和、同色系的纸面/深场
+    COLOR_MODE_CHOICES = [
+        {"title": "默认配色（保持版式原始底色）", "value": "default"},
+        {"title": "随机配色（低饱和 · 同色系）", "value": "random"},
+    ]
+
     # 单图 / 多图判定：auto 时按目录层级与素材数量自动选
     COVER_MODE_CHOICES = [
         {"title": "自动（有子目录或多图 → 多图版式）", "value": "auto"},
@@ -152,6 +160,7 @@ class FolderCover(_PluginBase):
     _exclude_paths = ""
     _recursive = True
     _cover_mode = "auto"
+    _color_mode = "default"
     _portrait_layout = "画框"
     _portrait_multi_layout = "叠片"
     _landscape_layout = "影院宽幅"
@@ -181,6 +190,7 @@ class FolderCover(_PluginBase):
             self._exclude_paths = config.get("exclude_paths") or ""
             self._recursive = config.get("recursive") if config.get("recursive") is not None else True
             self._cover_mode = config.get("cover_mode") or "auto"
+            self._color_mode = config.get("color_mode") if config.get("color_mode") in ("default", "random") else "default"
             self._portrait_layout = self._normalize_layout(config.get("portrait_layout"), "画框")
             self._portrait_multi_layout = self._normalize_layout(
                 config.get("portrait_multi_layout"), "叠片")
@@ -250,6 +260,7 @@ class FolderCover(_PluginBase):
                     "output_folder": self._output_folder,
                     "output_backdrop": self._output_backdrop,
                     "title_enabled": self._title_enabled,
+                    "color_mode": self._color_mode,
                     "gen_strategy": self._gen_strategy,
                 })
             if self._scheduler.get_jobs():
@@ -298,6 +309,16 @@ class FolderCover(_PluginBase):
                                         "model": "cover_mode",
                                         "label": "单图/多图判定",
                                         "items": self.COVER_MODE_CHOICES,
+                                    },
+                                }
+                            ]},
+                            {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [
+                                {
+                                    "component": "VSelect",
+                                    "props": {
+                                        "model": "color_mode",
+                                        "label": "扫描配色",
+                                        "items": self.COLOR_MODE_CHOICES,
                                     },
                                 }
                             ]},
@@ -408,6 +429,7 @@ class FolderCover(_PluginBase):
             "output_folder": True,
             "output_backdrop": True,
             "title_enabled": True,
+            "color_mode": "default",
             "gen_strategy": "100=60",
         }
 
@@ -445,6 +467,7 @@ class FolderCover(_PluginBase):
 
     def __libraryscan(self, _is_overlay: bool = False) -> None:
         started = datetime.now()
+        self._scan_palette_seed = str((getattr(self, "_scan_overrides", {}) or {}).get("color_seed") or "")
         self._last_stats = {"running": True, "total": 0, "planned": 0, "ok": 0, "skip": 0,
                             "fail": 0, "current": "", "ts": getattr(self, "_last_stats", {}).get("ts", "")}
         try:
@@ -581,6 +604,17 @@ class FolderCover(_PluginBase):
             return "skip"
 
         config = self._layout_config(directory)
+        overrides = getattr(self, "_scan_overrides", {}) or {}
+        if overrides.get("color_mode"):
+            config["color_mode"] = overrides["color_mode"]
+        if overrides.get("color_seed"):
+            config["color_seed"] = str(overrides["color_seed"])
+        if str(config.get("color_mode") or "default") == "random":
+            seed = str(config.get("color_seed") or getattr(self, "_scan_palette_seed", "") or secrets.token_hex(8))
+            config["_palette"] = random_palette(f"{seed}|{directory}")
+        else:
+            config.pop("_palette", None)
+            config.pop("color_seed", None)
         assets["mode"] = self._mode_for(assets)
         success = True
 
@@ -630,6 +664,10 @@ class FolderCover(_PluginBase):
             config.setdefault(key, value)
         for key, value in (style.get("landscape_config") or {}).items():
             config.setdefault(key, value)
+        config["color_mode"] = style.get("color_mode") or self._color_mode
+        # 旧清单里可能存过 color_seed；随机配色现在要求每次制作按目录重新取色，
+        # 因此不再沿用清单里的旧种子。
+        config["color_seed"] = ""
         return config
 
     @staticmethod
