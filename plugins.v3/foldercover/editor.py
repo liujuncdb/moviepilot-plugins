@@ -71,18 +71,18 @@ input:focus,textarea:focus{border-color:#3f5c8f}
 .seg{display:inline-flex;background:#0f141d;border:1px solid var(--line);border-radius:10px;padding:2px}
 .seg button{border:0;background:transparent;padding:5px 12px;border-radius:8px;color:var(--dim)}
 .seg button.on{background:#26324a;color:#fff}
-.content{overflow:auto;padding:16px 18px 40px;flex:1}
+.content{overflow:auto;padding:14px 16px 32px;flex:1}
 .status{color:var(--dim);font-size:12px}
-.group{margin-bottom:22px}
+.group{margin-bottom:18px}
 .group h3{margin:0 0 4px;font-size:12px;letter-spacing:1.4px;color:#9fb0cc;font-weight:600;text-transform:uppercase}
-.group .hint{color:var(--dim);font-size:11px;margin-bottom:10px}
-.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));align-items:start}
+.group .hint{color:var(--dim);font-size:11px;margin-bottom:8px}
+.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));align-items:start}
 .card{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#0f141d;
   cursor:pointer;transition:.15s}
 .card:hover{transform:translateY(-1px);border-color:#3c527d}
 .card.sel{border-color:#6f9bff;box-shadow:0 0 0 2px rgba(111,155,255,.25)}
 .card img{display:block;width:100%;height:auto;background:#0a0d13;object-fit:contain}
-.card .cap{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 9px}
+.card .cap{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 8px}
 .card .cap b{font-size:12px;font-weight:600}
 .card .tag{font-size:10px;color:var(--dim)}
 .card .rec{position:absolute;top:8px;right:8px;font-size:10px;padding:1px 7px;border-radius:999px;
@@ -136,10 +136,10 @@ ul.report li{margin:3px 0}
   .seg{order:-1;width:100%}
   .seg button{flex:1;padding:7px 0}
   #btnApply,#btnBatch{flex:1;padding:9px 8px;font-size:12px}
-  .content{padding:10px 10px 24px}
-  .group{margin-bottom:16px}
+  .content{padding:10px 8px 20px}
+  .group{margin-bottom:14px}
   .group h3{font-size:11px;letter-spacing:1px}
-  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .card{border-radius:10px}
   .card .cap{padding:6px 7px;gap:4px}
   .card .cap b{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
